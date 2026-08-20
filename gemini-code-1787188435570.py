@@ -5,13 +5,15 @@ import random
 st.set_page_config(page_title="우리 반 친퀴즈!", page_icon="🧩", layout="centered")
 
 st.title("🧩 우리 반 친퀴즈!")
-st.caption("질문들에 대해 이렇게 답변한 주인공은 누구일까요?")
+st.caption("힌트를 하나씩 열어보며 주인공이 누구인지 맞춰보세요!")
 
 # 세션 상태 초기화
 if "filtered_quiz" not in st.session_state:
     st.session_state.filtered_quiz = []
 if "current_index" not in st.session_state:
     st.session_state.current_index = 0
+if "hint_count" not in st.session_state:
+    st.session_state.hint_count = 1  # 처음에 보여줄 힌트 개수 (1개부터 시작)
 if "show_answer" not in st.session_state:
     st.session_state.show_answer = False
 
@@ -22,10 +24,8 @@ with st.sidebar:
     
     if uploaded_file is not None:
         try:
-            # 엑셀 파일 읽기
             df = pd.read_excel(uploaded_file)
             
-            # '반'과 '이름' 컬럼 유연하게 찾기
             class_col = None
             name_col = None
             
@@ -37,9 +37,8 @@ with st.sidebar:
                     name_col = col
 
             if name_col is None:
-                st.error("❌ '이름' 또는 '성명'이 포함된 열을 찾을 수 없습니다. 엑셀의 열 이름을 확인해 주세요.")
+                st.error("❌ '이름' 또는 '성명'이 포함된 열을 찾을 수 없습니다.")
             else:
-                # '반' 컬럼이 있는 경우 학급 선택 필터 제공
                 if class_col:
                     classes = sorted(df[class_col].dropna().unique())
                     selected_class = st.selectbox("🎯 학급 선택", classes)
@@ -47,7 +46,6 @@ with st.sidebar:
                 else:
                     filtered_df = df.copy()
                 
-                # 메인 로직에서 쉽게 쓰기 위해 컬럼명 표준화
                 st.session_state.class_col = class_col
                 st.session_state.name_col = name_col
                 st.session_state.filtered_quiz = filtered_df.to_dict("records")
@@ -61,6 +59,7 @@ with st.sidebar:
         if st.session_state.filtered_quiz:
             random.shuffle(st.session_state.filtered_quiz)
             st.session_state.current_index = 0
+            st.session_state.hint_count = 1
             st.session_state.show_answer = False
             st.rerun()
 
@@ -73,32 +72,31 @@ if st.session_state.filtered_quiz:
     st.progress((st.session_state.current_index + 1) / total_students)
     st.write(f"**학생 {st.session_state.current_index + 1} / {total_students}**")
 
-    # '반', '이름', '타임스탬프' 등을 제외한 실제 질문들만 추출
+    # 질문 추출
     name_col = st.session_state.get("name_col")
     class_col = st.session_state.get("class_col")
-    
     ignore_keywords = ["타임스탬프", "Timestamp", "시간"]
     
     questions = []
     for col in current_student.keys():
         col_str = str(col).strip()
-        # 반, 이름, 타임스탬프 컬럼 제외
         if col == name_col or col == class_col:
             continue
         if any(kw in col_str for kw in ignore_keywords):
             continue
-        if pd.notna(current_student[col]):  # 답변이 비어있지 않은 질문만 추가
+        if pd.notna(current_student[col]):
             questions.append(col)
 
     # 퀴즈 카드 표시
     with st.container(border=True):
-        st.subheader("💡 이 학생의 힌트 목록")
-        st.write("")
+        st.subheader("💡 힌트 카드")
         
-        # 질문과 답변 출력
-        for idx, q in enumerate(questions, 1):
+        # 현재 hint_count 개수만큼만 질문 공개
+        visible_questions = questions[:st.session_state.hint_count]
+        
+        for idx, q in enumerate(visible_questions, 1):
             answer = current_student[q]
-            st.markdown(f"**Q{idx}. {q}**")
+            st.markdown(f"**힌트 {idx}. {q}**")
             st.info(f"💬 \"{answer}\"")
         
         st.divider()
@@ -108,29 +106,40 @@ if st.session_state.filtered_quiz:
             student_name = current_student.get(name_col, "이름 없음")
             st.success(f"🎉 **정답: {student_name}**")
         else:
-            st.warning("❓ **이 모든 답변의 주인공은 누구일까요?**")
+            st.warning("❓ **이 답변의 주인공은 누구일까요?**")
 
-    # 버튼 제어 영역
-    col1, col2, col3 = st.columns(3)
+    # 제어 버튼 (4개 컬럼)
+    col1, col2, col3, col4 = st.columns(4)
 
     with col1:
+        # 남아있는 힌트가 있을 때만 '다음 힌트' 버튼 활성화
+        if st.session_state.hint_count < len(questions):
+            if st.button("💡 다음 힌트", use_container_width=True):
+                st.session_state.hint_count += 1
+                st.rerun()
+        else:
+            st.button("💡 힌트 끝!", use_container_width=True, disabled=True)
+
+    with col2:
         if st.button("👀 정답 공개", use_container_width=True, type="primary"):
             st.session_state.show_answer = True
             st.balloons()
             st.rerun()
 
-    with col2:
+    with col3:
         if st.button("➡️ 다음 학생", use_container_width=True):
             if st.session_state.current_index < len(st.session_state.filtered_quiz) - 1:
                 st.session_state.current_index += 1
             else:
                 st.session_state.current_index = 0
+            st.session_state.hint_count = 1  # 힌트 개수 리셋
             st.session_state.show_answer = False
             st.rerun()
 
-    with col3:
-        if st.button("🔄 처음부터 다시", use_container_width=True):
+    with col4:
+        if st.button("🔄 처음부터", use_container_width=True):
             st.session_state.current_index = 0
+            st.session_state.hint_count = 1  # 힌트 개수 리셋
             st.session_state.show_answer = False
             st.rerun()
 
