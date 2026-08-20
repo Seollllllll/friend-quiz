@@ -1,6 +1,7 @@
 import streamlit as st
 import pandas as pd
 import random
+import os
 
 st.set_page_config(page_title="우리 반 친퀴즈!", page_icon="🧩", layout="centered")
 
@@ -13,25 +14,46 @@ if "current_index" not in st.session_state:
 if "show_answer" not in st.session_state:
     st.session_state.show_answer = False
 
-# 사이드바: 엑셀 파일 업로드, 반 선택, 질문 선택
+# 기본 파일 경로 (GitHub에 올릴 파일명)
+DEFAULT_FILE_PATH = "data.xlsx"
+
+# 데이터 로드 함수
+def load_data(file_source):
+    df = pd.read_excel(file_source, dtype=str)
+    
+    class_col = None
+    name_col = None
+    
+    for col in df.columns:
+        col_str = str(col).strip()
+        if "반" in col_str and class_col is None:
+            class_col = col
+        if ("이름" in col_str or "성명" in col_str) and name_col is None:
+            name_col = col
+
+    return df, class_col, name_col
+
+# 사이드바: 파일 설정 및 필터
 with st.sidebar:
     st.header("⚙️ 퀴즈 데이터 설정")
-    uploaded_file = st.file_uploader("엑셀 파일 업로드 (.xlsx)", type=["xlsx"])
+    uploaded_file = st.file_uploader("새 엑셀 파일 업로드 (.xlsx)", type=["xlsx"])
     
-    if uploaded_file is not None:
-        try:
-            df = pd.read_excel(uploaded_file, dtype=str)
-            
-            class_col = None
-            name_col = None
-            
-            for col in df.columns:
-                col_str = str(col).strip()
-                if "반" in col_str and class_col is None:
-                    class_col = col
-                if ("이름" in col_str or "성명" in col_str) and name_col is None:
-                    name_col = col
+    df = None
+    class_col = None
+    name_col = None
 
+    try:
+        # 업로드한 파일이 있으면 그것을 쓰고, 없으면 기본 data.xlsx 읽기
+        if uploaded_file is not None:
+            df, class_col, name_col = load_data(uploaded_file)
+            st.info("📁 업로드된 파일 사용 중")
+        elif os.path.exists(DEFAULT_FILE_PATH):
+            df, class_col, name_col = load_data(DEFAULT_FILE_PATH)
+            st.info("📁 기본 파일(data.xlsx) 사용 중")
+        else:
+            st.warning("엑셀 파일을 업로드하거나 GitHub에 data.xlsx 파일을 올려주세요.")
+
+        if df is not None:
             if name_col is None:
                 st.error("❌ '이름' 또는 '성명'이 포함된 열을 찾을 수 없습니다.")
             else:
@@ -41,9 +63,10 @@ with st.sidebar:
                     selected_class = st.selectbox("🎯 학급 선택", classes, key="class_select")
                     filtered_df = df[df[class_col] == selected_class].copy()
                 else:
+                    selected_class = "전체"
                     filtered_df = df.copy()
                 
-                # 2. 질문 컬럼들만 추출 (반, 이름, 타임스탬프 제외)
+                # 2. 질문 컬럼들만 추출
                 ignore_keywords = ["타임스탬프", "Timestamp", "시간"]
                 question_cols = []
                 for col in df.columns:
@@ -65,7 +88,6 @@ with st.sidebar:
                     st.session_state.name_col = name_col
                     st.session_state.selected_question = selected_question
                     
-                    # 해당 질문에 답변이 있는 학생 데이터만 추출 후 랜덤 섞기
                     valid_quiz = []
                     for row in filtered_df.to_dict("records"):
                         ans = str(row.get(selected_question, "")).strip()
@@ -77,13 +99,13 @@ with st.sidebar:
                     st.session_state.current_index = 0
                     st.session_state.show_answer = False
 
-                st.success(f"총 {len(st.session_state.get('filtered_quiz', []))}명의 답변 (랜덤 섞기 완료!)")
+                st.success(f"총 {len(st.session_state.get('filtered_quiz', []))}명의 답변 준비 완료!")
             
-        except Exception as e:
-            st.error(f"파일을 읽는 중 오류가 발생했습니다: {e}")
+    except Exception as e:
+        st.error(f"파일을 읽는 중 오류가 발생했습니다: {e}")
 
     st.divider()
-    if st.button("🔀 학생 순서 다시 섞기", use_container_width=True):
+    if st.button("🔀 순서 다시 섞기", use_container_width=True):
         if "filtered_quiz" in st.session_state and st.session_state.filtered_quiz:
             random.shuffle(st.session_state.filtered_quiz)
             st.session_state.current_index = 0
@@ -120,7 +142,7 @@ if "filtered_quiz" in st.session_state and st.session_state.filtered_quiz:
         else:
             st.warning("❓ **이 답변의 주인공은 누구일까요?**")
 
-    # 제어 버튼 (3개)
+    # 제어 버튼
     col1, col2, col3 = st.columns(3)
 
     with col1:
@@ -145,4 +167,4 @@ if "filtered_quiz" in st.session_state and st.session_state.filtered_quiz:
             st.rerun()
 
 else:
-    st.info("👈 왼쪽 사이드바에서 엑셀(.xlsx) 파일을 업로드해 주세요!")
+    st.info("👈 왼쪽 사이드바에서 엑셀 파일을 올리거나 GitHub 저장소에 data.xlsx 파일을 넣어주세요!")
