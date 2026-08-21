@@ -13,8 +13,12 @@ if "current_index" not in st.session_state:
     st.session_state.current_index = 0
 if "show_answer" not in st.session_state:
     st.session_state.show_answer = False
+if "user_guess" not in st.session_state:
+    st.session_state.user_guess = ""
+if "guess_result" not in st.session_state:
+    st.session_state.guess_result = None
 
-# 기본 파일 경로 (GitHub에 올릴 파일명)
+# 기본 파일 경로
 DEFAULT_FILE_PATH = "data.xlsx"
 
 # 데이터 로드 함수
@@ -43,7 +47,6 @@ with st.sidebar:
     name_col = None
 
     try:
-        # 업로드한 파일이 있으면 그것을 쓰고, 없으면 기본 data.xlsx 읽기
         if uploaded_file is not None:
             df, class_col, name_col = load_data(uploaded_file)
             st.info("📁 업로드된 파일 사용 중")
@@ -98,6 +101,7 @@ with st.sidebar:
                     st.session_state.filtered_quiz = valid_quiz
                     st.session_state.current_index = 0
                     st.session_state.show_answer = False
+                    st.session_state.guess_result = None
 
                 st.success(f"총 {len(st.session_state.get('filtered_quiz', []))}명의 답변 준비 완료!")
             
@@ -110,6 +114,7 @@ with st.sidebar:
             random.shuffle(st.session_state.filtered_quiz)
             st.session_state.current_index = 0
             st.session_state.show_answer = False
+            st.session_state.guess_result = None
             st.success("순서를 다시 섞었습니다!")
             st.rerun()
 
@@ -120,6 +125,7 @@ if "filtered_quiz" in st.session_state and st.session_state.filtered_quiz:
     
     name_col = st.session_state.get("name_col")
     selected_question = st.session_state.get("selected_question")
+    actual_name = str(current_student.get(name_col, "이름 없음")).strip()
 
     # 진행 상황 표시
     total_students = len(quiz_data)
@@ -136,18 +142,51 @@ if "filtered_quiz" in st.session_state and st.session_state.filtered_quiz:
         
         st.divider()
         
+        # 정답 공개 상태
         if st.session_state.show_answer:
-            student_name = current_student.get(name_col, "이름 없음")
-            st.success(f"🎉 **정답: {student_name}**")
+            st.success(f"🎉 **정답: {actual_name}**")
         else:
             st.warning("❓ **이 답변의 주인공은 누구일까요?**")
+
+    # 정답 입력 및 채점 영역
+    col_input, col_check = st.columns([3, 1])
+    
+    with col_input:
+        user_input = st.text_input("학생 이름을 입력하세요", key=f"input_{st.session_state.current_index}", placeholder="예: 김철수")
+    
+    with col_check:
+        st.write("") # 버튼 위치 맞춤용
+        st.write("")
+        if st.button("🎯 정답 확인", use_container_width=True):
+            clean_input = user_input.strip().replace(" ", "")
+            clean_actual = actual_name.replace(" ", "")
+            
+            if clean_input == "":
+                st.session_state.guess_result = "empty"
+            elif clean_input in clean_actual or clean_actual in clean_input:
+                st.session_state.guess_result = "correct"
+                st.session_state.show_answer = True
+                st.balloons()
+            else:
+                st.session_state.guess_result = "wrong"
+
+    # 채점 결과 피드백 메시지
+    if st.session_state.guess_result == "correct":
+        st.success(f"⭕ **정답입니다! 주인공은 '{actual_name}' 학생입니다!**")
+    elif st.session_state.guess_result == "wrong":
+        st.error("❌ **아쉽네요! 오답입니다. 다시 도전해보세요!**")
+    elif st.session_state.guess_result == "empty":
+        st.warning("⚠️ 이름을 입력한 후 정답 확인 버튼을 눌러주세요.")
+
+    st.write("")
 
     # 제어 버튼
     col1, col2, col3 = st.columns(3)
 
     with col1:
-        if st.button("👀 정답 공개", use_container_width=True, type="primary"):
+        if st.button("👀 그냥 정답 공개", use_container_width=True, type="primary"):
             st.session_state.show_answer = True
+            st.session_state.guess_result = None
             st.balloons()
             st.rerun()
 
@@ -158,12 +197,14 @@ if "filtered_quiz" in st.session_state and st.session_state.filtered_quiz:
             else:
                 st.session_state.current_index = 0
             st.session_state.show_answer = False
+            st.session_state.guess_result = None
             st.rerun()
 
     with col3:
         if st.button("🔄 처음부터", use_container_width=True):
             st.session_state.current_index = 0
             st.session_state.show_answer = False
+            st.session_state.guess_result = None
             st.rerun()
 
 else:
